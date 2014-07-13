@@ -1,5 +1,5 @@
 #!/usr/bin/env st-livescript
-require! <[optimist pgrest async cheerio request fs zhutil]>
+require! <[optimist pgrest async]>
 {consume-events} = require \./lib/pgq
 twly = require \./lib
 
@@ -108,159 +108,15 @@ class CommitteeFactory extends MotionAndBillFactory
   create_motions_and_bills: (plx, sitting, batch, ev_id) ->
     self = this;
     (done) ->
-      page <- self.page_of_js_args sitting, plx
-      rows  = self.rows_in_page page
-      args  = self.js_args_in_rows rows, sitting
-      page <- self.page_of_bills args
-      bills = self.bills_in_page page
-      bills = self.bills_with_cascade bills, sitting
+      day   <- self.date_of_sitting sitting, plx
+      bills <- misq.get_from_committe sitting, day
       self.save_motions_and_bills bills, plx, sitting
       done!
 
-  page_of_js_args: (sitting, plx, cb) ->
-    self  = this
-    day  <- @date_of_sitting sitting, plx
-    year  = day.getYear! + 1900 - 1911
-    month = self.rjust day.getMonth! + 1
-    date  = self.rjust day.getDate!
-    day   = "#year/#month/#date"
-    uri   = 'http://misq.ly.gov.tw/MISQ/IQuery/misq5000QueryMeeting.action'
-    err, res, body <- request do
-      method: \POST
-      uri: uri
-      headers: do
-        Origin: 'http://misq.ly.gov.tw'
-        Referer: uri
-        User-Agent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2078.0 Safari/537.36'
-      form: do
-        term:          self.rjust sitting.ad
-        sessionPeriod: self.rjust sitting.session
-        meetingDateS:  day
-        meetingDateE:  day
-        queryCondition: <[ 0703 2100 2300 2400 4000 4100 4200 4300 4500 ]>
-    throw that if err
-    page = cheerio.load body
-    cb page
-
   date_of_sitting: (sitting, plx, cb) ->
     (err, found) <- plx.conn.query "select * from calendar where _calendar_sitting_id(calendar) = '#{sitting.id}';"
-    for row in found.rows
-      if row.summary == sitting.summary
-        cb row.date
-        break
-
-  rows_in_page: (page) ->
-    table = page '#queryListForm table'
-    rows = @rows_of_table table, (col, header) ->
-      if header == '會議名稱含事由'
-        link = col.find '> a' .first!
-        html = link.html! - /^\s*|\s*$/gm
-        name = html.match /^.+(?=<br)/ .0
-        jscode = link.attr 'onclick'
-        args = jscode.match /[\d\/]+/g
-        content = {name: name, args: args}
-      else
-        content = col.text! - /^\s*|\s*$/gm
-    rows
-
-  rows_of_table: (table, cb) ->
-    rows = []
-    headers = table.find 'th' .map -> @text!
-    table.find '> tr' .map ->
-      hash = {}
-      cols = @find '> td'
-      return if cols.length == 0
-      cols.map (i) ->
-        header = headers[i]
-        content = cb this, header
-        hash[header] = content
-      rows.push hash
-    rows
-
-  js_args_in_rows: (rows, sitting) ->
-    args = []
-    for row in rows
-      content = row['會議名稱含事由']
-      if content.name == sitting.name
-        args = content.args
-    args
-
-  rjust: (object) ->
-    string = new AugmentedString object
-    string.rjust 2, '0'
-
-  page_of_bills: ([meetingNo, meetingTime, departmentCode], cb) ->
-    uri = "http://misq.ly.gov.tw/MISQ/IQuery/misq5000QueryMeetingDetail.action"
-    err, res, body <- request do
-      method: \POST
-      uri: uri
-      headers: do
-        Origin: 'http://misq.ly.gov.tw'
-        Referer: uri
-        User-Agent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2078.0 Safari/537.36'
-      form: {meetingNo, meetingTime, departmentCode}
-    page = cheerio.load body
-    cb page
-
-  bills_in_page: (page) ->
-    self = this
-    bills = []
-    page '#queryForm table tr' .each ->
-      header = @find '> th' .map -> @text!
-      return if header.length != 1
-      header = header.0 - /：/
-      content = @find '> td'
-      if header == \關係文書
-        links = content.find 'a[onclick]'
-        bills := links.map -> self.bill_in_link this
-    bills
-
-  bill_in_link: (link) ->
-    name = link.text! - /^\s*|\s*$/gm
-    name = name.match /「.+」/ .0
-    id = link.attr \onclick .match /\d+/ .0
-    {name, id}
-
-  bills_with_cascade: (bills, sitting) ->
-    self = this
-    bills = bills.map ->
-      map = self.map_bill_to_cascade sitting
-      [it, map[it.name]]
-    bills = bills.filter (bill, cascade) -> cascade
-    bills.map (bill, cascade) ->
-      [...levels, summary] = cascade
-      levels = levels.map -> zhutil.parseZHNumber it
-      [level_1st, level_2nd] = levels
-      {level_1st, level_2nd, summary, bill.id}
-
-  map_bill_to_cascade: (sitting) ->
-    return that if @map
-    @map = {}
-    lines = sitting.summary.split "\n"
-    for line in lines
-      switch
-      case line.match @level_1st_reg!
-        level_1st = that.1
-        level_2nd = '一'
-        summary   = that.2
-      case line.match @level_2nd_reg!
-        level_2nd = that.1
-        summary   = that.2
-      if line.match /「.+」/
-        @map[that.0] = [level_1st, level_2nd, summary]
-    @map
-
-  level_1st_reg: ->
-    return that if @lv_1st_reg
-    zhnumber = <[○ 一 二 三 四 五 六 七 八 九 十]>
-    zhnumber = (<[千 百 零]> ++ zhnumber) * '|'
-    @lv_1st_reg = new RegExp "^\s*((?:#zhnumber)+)、(.*)$"
-
-  level_2nd_reg: ->
-    return that if @lv_2nd_reg
-    zhnumber = <[○ 一 二 三 四 五 六 七 八 九 十]>
-    zhnumber = zhnumber * '|'
-    @lv_2nd_reg = new RegExp "^\s*（((?:#zhnumber)+)）(.*)$"
+    rows = found.rows.filter -> it.summary == sitting.summary
+    cb rows[0].date
 
   save_motions_and_bills: (bills, plx, sitting) ->
     sitting_id = sitting.id
@@ -283,34 +139,6 @@ class CommitteeFactory extends MotionAndBillFactory
         done!
     err, res <- async.series funcs
     throw that if err
-
-class AugmentedString
-
-  (@string) ->
-
-  # "hello".rjust(4)            #=> "hello"
-  # "hello".rjust(20)           #=> "               hello"
-  # "hello".rjust(20, '1234')   #=> "123412341234123hello"
-  rjust: (width, padding = ' ') ->
-    len = width - @string.length
-    if len > 0
-      times  = len / padding.length
-      remain = len % padding.length
-      string = new AugmentedString padding
-      string = string.repeat times
-      tail   = padding.slice 0, remain
-      string = string.concat tail
-      string.concat @string
-    else
-      @string
-
-  # "Ho! ".repeat(3)  #=> "Ho! Ho! Ho! "
-  # "Ho! ".repeat(0)  #=> ""
-  repeat: (times) ->
-    clone = ''
-    for i to times - 1
-      clone = clone.concat @string
-    clone
 
 new YSFactory conString
 new CommitteeFactory conString

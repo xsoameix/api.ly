@@ -28,8 +28,6 @@ dependencies:
   'node-twitter-api': \1.1.x
   twlyparser: 'git://github.com/g0v/twlyparser.git'
   pgrest: 'git://github.com/clkao/pgrest.git'
-  cheerio: \0.10.x
-  zhutil: \0.5.x
 devDependencies:
   LiveScript: '1.1.x'
   googleapis: '~0.6.1'
