@@ -9,4 +9,6 @@ EXPOSE 3000
 CMD lsc app/app.ls \
         --host 0.0.0.0 \
         --port 3000 \
-        --db tcp://ly:ly@$PG_PORT_5432_TCP_ADDR:$PG_PORT_5432_TCP_PORT/ly
+        --db tcp://ly:ly@$PG_PORT_5432_TCP_ADDR:$PG_PORT_5432_TCP_PORT/ly \
+        --prefix /v0/collections \
+        --schema pgrest

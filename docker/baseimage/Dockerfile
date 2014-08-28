@@ -3,7 +3,7 @@ MAINTAINER Lien Chiang <xsoameix@gmail.com>
 
 # Install berkshelf
 RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
-RUN apt-get update -y
+RUN apt-get update --fix-missing -y
 RUN apt-get install -y curl libxml2-dev libxslt-dev git \
                        autoconf automake build-essential
 RUN curl -L https://www.opscode.com/chef/install.sh | bash
