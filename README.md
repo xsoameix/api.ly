@@ -34,6 +34,7 @@ api.ly.g0v.tw endpoint source and utility scripts
             *   Dig into database
             *   Backup the database
             *   Restore the database
+            *   Run unit test (we use [dredd](https://github.com/apiaryio/dredd))
 
     *   Web server container (API endpoint)
 
@@ -124,6 +125,15 @@ api.ly.g0v.tw endpoint source and utility scripts
             And restart postgres container
 
         Please backup the database first before stopping database container running.
+    *   [Dredd](https://github.com/apiaryio/dredd) container for unit test
+
+        Build image
+
+            $ ./docker/dredd/scripts/build-image.sh
+
+        Open another terminal, and run tests:
+
+            $ ./docker/dredd/run.sh
 
     *   Delete the images
 
